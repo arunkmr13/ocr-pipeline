@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OCR Translation Pipeline</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f0; min-height: 100vh; color: #1a1a1a; }
+
+    .app { max-width: 960px; margin: 0 auto; padding: 24px 20px; }
+
+    .header { background: white; border: 0.5px solid #e0e0d8; border-radius: 12px; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .logo { display: flex; align-items: center; gap: 10px; }
+    .logo-icon { width: 32px; height: 32px; background: #185FA5; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+    .logo-icon svg { width: 18px; height: 18px; fill: white; }
+    .logo-text { font-size: 15px; font-weight: 600; }
+    .logo-sub { font-size: 12px; color: #888; }
+    .badge { background: #E6F1FB; color: #0C447C; font-size: 11px; padding: 4px 10px; border-radius: 6px; font-weight: 500; }
+
+    .upload-zone { background: white; border: 1.5px dashed #c0c0b8; border-radius: 12px; padding: 36px 20px; text-align: center; margin-bottom: 16px; cursor: pointer; transition: border-color 0.2s; }
+    .upload-zone:hover, .upload-zone.dragover { border-color: #185FA5; background: #f0f6fd; }
+    .upload-icon { width: 48px; height: 48px; background: #f0f0ea; border-radius: 50%; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; }
+    .upload-icon svg { width: 22px; height: 22px; stroke: #888; fill: none; stroke-width: 1.5; }
+    .upload-title { font-size: 15px; font-weight: 500; margin-bottom: 4px; }
+    .upload-sub { font-size: 13px; color: #888; }
+    .upload-btn { display: inline-block; margin-top: 14px; padding: 8px 18px; border: 0.5px solid #d0d0c8; border-radius: 8px; font-size: 13px; color: #1a1a1a; background: #f5f5f0; cursor: pointer; }
+    #file-input { display: none; }
+
+    .preview-bar { background: white; border: 0.5px solid #e0e0d8; border-radius: 10px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .preview-thumb { width: 36px; height: 36px; border-radius: 6px; object-fit: cover; border: 0.5px solid #e0e0d8; }
+    .preview-name { font-size: 13px; font-weight: 500; flex: 1; }
+    .preview-size { font-size: 12px; color: #888; }
+    .remove-btn { font-size: 12px; color: #888; cursor: pointer; padding: 4px 8px; border-radius: 6px; border: 0.5px solid #e0e0d8; }
+    .remove-btn:hover { color: #c0392b; border-color: #c0392b; }
+
+    .status-bar { background: white; border: 0.5px solid #e0e0d8; border-radius: 10px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .dot-idle { background: #c0c0b8; }
+    .dot-processing { background: #378ADD; animation: pulse 1s infinite; }
+    .dot-done { background: #639922; }
+    .dot-error { background: #E24B4A; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+    .status-text { font-size: 13px; color: #555; flex: 1; }
+    .steps { display: flex; gap: 5px; }
+    .step { font-size: 11px; padding: 3px 8px; border-radius: 6px; font-weight: 500; }
+    .step-done { background: #EAF3DE; color: #27500A; }
+    .step-active { background: #E6F1FB; color: #0C447C; }
+    .step-pending { background: #f0f0ea; color: #aaa; }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .panel { background: white; border: 0.5px solid #e0e0d8; border-radius: 12px; overflow: hidden; }
+    .panel-header { padding: 11px 14px; border-bottom: 0.5px solid #e0e0d8; display: flex; align-items: center; justify-content: space-between; }
+    .panel-title { font-size: 13px; font-weight: 500; }
+    .panel-tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; font-weight: 500; }
+    .tag-blue { background: #E6F1FB; color: #0C447C; }
+    .tag-green { background: #EAF3DE; color: #27500A; }
+    .img-area { min-height: 220px; display: flex; align-items: center; justify-content: center; background: #f8f8f4; flex-direction: column; gap: 8px; padding: 16px; }
+    .img-area img { max-width: 100%; max-height: 320px; border-radius: 6px; object-fit: contain; }
+    .img-placeholder svg { width: 36px; height: 36px; stroke: #c0c0b8; fill: none; stroke-width: 1.2; }
+    .img-placeholder span { font-size: 12px; color: #bbb; }
+
+    .text-panel { background: white; border: 0.5px solid #e0e0d8; border-radius: 12px; padding: 14px; margin-bottom: 16px; }
+    .text-panel-title { font-size: 13px; font-weight: 500; margin-bottom: 12px; }
+    .text-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .text-block { background: #f8f8f4; border-radius: 8px; padding: 10px 12px; }
+    .text-label { font-size: 11px; color: #888; margin-bottom: 6px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.03em; }
+    .text-content { font-size: 13px; color: #333; line-height: 1.6; white-space: pre-wrap; min-height: 48px; }
+    .text-empty { font-size: 12px; color: #bbb; font-style: italic; }
+
+    .footer-row { display: flex; gap: 10px; align-items: center; }
+    .process-btn { flex: 1; padding: 11px; background: #185FA5; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.15s; }
+    .process-btn:hover { background: #0C447C; }
+    .process-btn:disabled { background: #aac4e0; cursor: not-allowed; }
+    .dl-btn { padding: 11px 18px; border: 0.5px solid #d0d0c8; border-radius: 8px; font-size: 13px; color: #1a1a1a; background: white; cursor: pointer; font-weight: 500; transition: background 0.15s; }
+    .dl-btn:hover { background: #f5f5f0; }
+    .dl-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .lang-pill { font-size: 11px; background: #f0f0ea; color: #555; padding: 2px 8px; border-radius: 6px; }
+    .time-pill { font-size: 11px; color: #888; }
+    .error-msg { background: #FCEBEB; border: 0.5px solid #F09595; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #A32D2D; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <div class="logo-icon">
+        <svg viewBox="0 0 16 16"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+      </div>
+      <div>
+        <div class="logo-text">OCR Translation</div>
+        <div class="logo-sub">Image → Translated image</div>
+      </div>
+    </div>
+    <span class="badge">Powered by Tesseract + Google Translate</span>
+  </div>
+
+  <!-- Upload zone -->
+  <div class="upload-zone" id="upload-zone">
+    <div class="upload-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L8 8m4-4l4 4" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 20H4" stroke-linecap="round"/></svg>
+    </div>
+    <div class="upload-title">Drop your image here</div>
+    <div class="upload-sub">Supports JPG, PNG, BMP, TIFF · Any language</div>
+    <label class="upload-btn" for="file-input">Choose file</label>
+    <input type="file" id="file-input" accept="image/*">
+  </div>
+
+  <!-- File preview bar (hidden until file selected) -->
+  <div class="preview-bar" id="preview-bar" style="display:none">
+    <img class="preview-thumb" id="preview-thumb" src="" alt="">
+    <span class="preview-name" id="preview-name"></span>
+    <span class="preview-size" id="preview-size"></span>
+    <span class="remove-btn" id="remove-btn">Remove</span>
+  </div>
+
+  <!-- Error message -->
+  <div class="error-msg" id="error-msg" style="display:none"></div>
+
+  <!-- Status bar -->
+  <div class="status-bar" id="status-bar">
+    <div class="status-dot dot-idle" id="status-dot"></div>
+    <span class="status-text" id="status-text">Ready — upload an image to begin</span>
+    <div class="steps" id="steps-row" style="display:none">
+      <span class="step" id="s1">Preprocess</span>
+      <span class="step" id="s2">Layout</span>
+      <span class="step" id="s3">OCR</span>
+      <span class="step" id="s4">Translate</span>
+      <span class="step" id="s5">Render</span>
+    </div>
+  </div>
+
+  <!-- Image panels -->
+  <div class="grid">
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Original image</span>
+        <span class="panel-tag tag-blue" id="lang-badge">Source</span>
+      </div>
+      <div class="img-area" id="orig-area">
+        <div class="img-placeholder">
+          <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          <span>Upload an image to preview</span>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <span class="panel-title">Translated image</span>
+        <span class="panel-tag tag-green">English output</span>
+      </div>
+      <div class="img-area" id="out-area">
+        <div class="img-placeholder">
+          <svg viewBox="0 0 24 24"><path d="M5 8l4 4 4-4M3 6h18M3 12h10M3 18h7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Translated image appears here</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Text panel -->
+  <div class="text-panel">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <span class="text-panel-title">Extracted text</span>
+      <span class="time-pill" id="time-pill"></span>
+    </div>
+    <div class="text-row">
+      <div class="text-block">
+        <div class="text-label" id="orig-lang-label">Original</div>
+        <div class="text-content" id="orig-text"><span class="text-empty">Text will appear after processing</span></div>
+      </div>
+      <div class="text-block">
+        <div class="text-label">English translation</div>
+        <div class="text-content" id="trans-text"><span class="text-empty">Translation will appear here</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer actions -->
+  <div class="footer-row">
+    <button class="process-btn" id="process-btn" disabled>Translate image</button>
+    <button class="dl-btn" id="dl-btn" disabled>Download output</button>
+  </div>
+
+</div>
+
+<script>
+  const uploadZone = document.getElementById('upload-zone');
+  const fileInput = document.getElementById('file-input');
+  const previewBar = document.getElementById('preview-bar');
+  const previewThumb = document.getElementById('preview-thumb');
+  const previewName = document.getElementById('preview-name');
+  const previewSize = document.getElementById('preview-size');
+  const removeBtn = document.getElementById('remove-btn');
+  const processBtn = document.getElementById('process-btn');
+  const dlBtn = document.getElementById('dl-btn');
+  const errorMsg = document.getElementById('error-msg');
+  const statusDot = document.getElementById('status-dot');
+  const statusText = document.getElementById('status-text');
+  const stepsRow = document.getElementById('steps-row');
+  const origArea = document.getElementById('orig-area');
+  const outArea = document.getElementById('out-area');
+  const origText = document.getElementById('orig-text');
+  const transText = document.getElementById('trans-text');
+  const langBadge = document.getElementById('lang-badge');
+  const origLangLabel = document.getElementById('orig-lang-label');
+  const timePill = document.getElementById('time-pill');
+
+  let selectedFile = null;
+  let outputB64 = null;
+
+  const steps = ['s1','s2','s3','s4','s5'];
+  const stepNames = ['Preprocess','Layout','OCR','Translate','Render'];
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024*1024) return Math.round(bytes/1024) + ' KB';
+    return (bytes/(1024*1024)).toFixed(1) + ' MB';
+  }
+
+  function setSteps(activeIndex) {
+    stepsRow.style.display = 'flex';
+    steps.forEach((id, i) => {
+      const el = document.getElementById(id);
+      el.textContent = stepNames[i];
+      if (i < activeIndex) el.className = 'step step-done';
+      else if (i === activeIndex) el.className = 'step step-active';
+      else el.className = 'step step-pending';
+    });
+  }
+
+  function setStatus(state, text, stepIndex) {
+    statusDot.className = 'status-dot dot-' + state;
+    statusText.textContent = text;
+    if (stepIndex !== undefined) setSteps(stepIndex);
+    else stepsRow.style.display = 'none';
+  }
+
+  function showFile(file) {
+    selectedFile = file;
+    previewName.textContent = file.name;
+    previewSize.textContent = formatSize(file.size);
+    const reader = new FileReader();
+    reader.onload = e => {
+      previewThumb.src = e.target.result;
+      origArea.innerHTML = '<img src="' + e.target.result + '" alt="original">';
+    };
+    reader.readAsDataURL(file);
+    previewBar.style.display = 'flex';
+    uploadZone.style.display = 'none';
+    processBtn.disabled = false;
+    errorMsg.style.display = 'none';
+    setStatus('idle', 'Image ready — click "Translate image" to start');
+    outArea.innerHTML = '<div class="img-placeholder"><svg viewBox="0 0 24 24" style="width:36px;height:36px;stroke:#c0c0b8;fill:none;stroke-width:1.2"><path d="M5 8l4 4 4-4M3 6h18M3 12h10M3 18h7" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:12px;color:#bbb">Translated image appears here</span></div>';
+    origText.innerHTML = '<span class="text-empty">Text will appear after processing</span>';
+    transText.innerHTML = '<span class="text-empty">Translation will appear here</span>';
+    timePill.textContent = '';
+    dlBtn.disabled = true;
+    outputB64 = null;
+  }
+
+  fileInput.addEventListener('change', e => { if (e.target.files[0]) showFile(e.target.files[0]); });
+
+  uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+  uploadZone.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadZone.classList.remove('dragover');
+    if (e.dataTransfer.files[0]) showFile(e.dataTransfer.files[0]);
+  });
+
+  removeBtn.addEventListener('click', () => {
+    selectedFile = null;
+    fileInput.value = '';
+    previewBar.style.display = 'none';
+    uploadZone.style.display = 'block';
+    processBtn.disabled = true;
+    dlBtn.disabled = true;
+    outputB64 = null;
+    setStatus('idle', 'Ready — upload an image to begin');
+    origArea.innerHTML = '<div class="img-placeholder"><svg viewBox="0 0 24 24" style="width:36px;height:36px;stroke:#c0c0b8;fill:none;stroke-width:1.2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg><span style="font-size:12px;color:#bbb">Upload an image to preview</span></div>';
+    outArea.innerHTML = '<div class="img-placeholder"><svg viewBox="0 0 24 24" style="width:36px;height:36px;stroke:#c0c0b8;fill:none;stroke-width:1.2"><path d="M5 8l4 4 4-4M3 6h18M3 12h10M3 18h7" stroke-linecap="round" stroke-linejoin="round"/></svg><span style="font-size:12px;color:#bbb">Translated image appears here</span></div>';
+    origText.innerHTML = '<span class="text-empty">Text will appear after processing</span>';
+    transText.innerHTML = '<span class="text-empty">Translation will appear here</span>';
+    timePill.textContent = '';
+    errorMsg.style.display = 'none';
+  });
+
+  async function simulateSteps(callback) {
+    for (let i = 0; i < steps.length; i++) {
+      setSteps(i);
+      statusText.textContent = 'Processing · ' + stepNames[i] + '...';
+      await new Promise(r => setTimeout(r, 600));
+    }
+    callback();
+  }
+
+  processBtn.addEventListener('click', async () => {
+    if (!selectedFile) return;
+    processBtn.disabled = true;
+    dlBtn.disabled = true;
+    errorMsg.style.display = 'none';
+    outputB64 = null;
+    statusDot.className = 'status-dot dot-processing';
+    stepsRow.style.display = 'flex';
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    let stepInterval = 0;
+    let stepIdx = 0;
+    stepInterval = setInterval(() => {
+      if (stepIdx < steps.length) { setSteps(stepIdx); stepIdx++; }
+    }, 800);
+
+    try {
+      const res = await fetch('/extract-and-translate', { method: 'POST', body: formData });
+      clearInterval(stepInterval);
+
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(err || 'Server error ' + res.status);
+      }
+
+      const data = await res.json();
+      setSteps(steps.length);
+
+      // Show output image
+      if (data.rendered_image_base64) {
+        outputB64 = data.rendered_image_base64;
+        outArea.innerHTML = '<img src="data:image/png;base64,' + outputB64 + '" alt="translated">';
+        dlBtn.disabled = false;
+      }
+
+      // Language badge
+      const lang = data.detected_language || 'en';
+      langBadge.textContent = lang.toUpperCase();
+      origLangLabel.textContent = 'Original · ' + lang.toUpperCase();
+      timePill.textContent = data.processing_time_seconds + 's';
+
+      // Text blocks
+      if (data.text_blocks && data.text_blocks.length > 0) {
+        const origLines = data.text_blocks.map(b => b.text).filter(Boolean).join('\n');
+        const transLines = data.text_blocks.map(b => b.translated || b.text).filter(Boolean).join('\n');
+        origText.textContent = origLines;
+        transText.textContent = transLines;
+      } else {
+        origText.innerHTML = '<span class="text-empty">No text detected</span>';
+        transText.innerHTML = '<span class="text-empty">Nothing to translate</span>';
+      }
+
+      setStatus('done', 'Done · ' + data.processing_time_seconds + 's');
+      processBtn.disabled = false;
+
+    } catch (err) {
+      clearInterval(stepInterval);
+      errorMsg.textContent = 'Error: ' + err.message;
+      errorMsg.style.display = 'block';
+      setStatus('error', 'Something went wrong — see error above');
+      processBtn.disabled = false;
+    }
+  });
+
+  dlBtn.addEventListener('click', () => {
+    if (!outputB64) return;
+    const a = document.createElement('a');
+    a.href = 'data:image/png;base64,' + outputB64;
+    a.download = 'translated_' + (selectedFile ? selectedFile.name : 'output.png');
+    a.click();
+  });
+</script>
+</body>
+</html>
