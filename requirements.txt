@@ -1,0 +1,14 @@
+fastapi>=0.110.0
+uvicorn[standard]
+pillow>=10.0.0
+opencv-python-headless>=4.9.0
+numpy>=1.24.0
+scipy
+torch
+torchvision
+transformers
+accelerate
+pytesseract
+deep-translator
+langdetect
+python-multipart
